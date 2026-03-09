@@ -1,0 +1,141 @@
+# Quest: Avalon Discord Bot
+
+A fully-featured Discord bot that lets players run Quest: Avalon (4–10 players) entirely through Discord — roles are delivered via DM, all voting is done with buttons, and game state is managed per-channel.
+
+## User Review Required
+
+> [!IMPORTANT]
+> You need a **Discord Bot Token** before this can run. The bot token goes in a `.env` file (instructions in `README.md`). You'll also need to invite the bot with `applications.commands` and `bot` OAuth2 scopes.
+
+> [!NOTE]
+> The bot supports games from **4 to 10 players**. Multiple simultaneous games can run in different channels. All sensitive info (roles, loyalties) is sent via **private DM** — players must have DMs open from server members.
+
+---
+
+## Proposed Changes
+
+### New Project: `quest_bg/`
+
+---
+
+#### [NEW] `quest_bg/bot.py`
+Main bot entry point. Registers all slash commands and wires up Discord events.
+
+**Slash commands:**
+| Command | Description |
+|---|---|
+| `/quest new` | Start a new game lobby in this channel |
+| `/quest join` | Join the lobby |
+| `/quest start` | Start the game (host only, 4–10 players) |
+| `/quest pick @player1 @player2 ...` | Leader picks team members |
+| `/quest seal @player` | Leader applies Magic Seal to a player |
+| `/quest vote success/fail` | Mission team member submits quest card (via DM button) |
+| `/quest accuse @p1 @p2` | Final Chance accusation (Good side only) |
+| `/quest hunt role1 @player1 role2 @player2` | Blind Hunter reveals two Good players |
+| `/quest status` | Show current game state |
+| `/quest cancel` | Cancel the current game (host only) |
+
+**Phase transitions are handled automatically** after each command.
+
+---
+
+#### [NEW] `quest_bg/game_state.py`
+Core state machine for a single game instance. Stored in-memory per channel.
+
+**Key classes:**
+- `GameState` — holds all player/role/mission data
+- `Phase` (enum) — `LOBBY`, `ROLE_REVEAL`, `TEAM_BUILD`, `QUEST`, `TRANSITION`, `DISCUSSION`, `FINAL_MISSION`, `HUNT`, `LAST_CHANCE`, `ENDED`
+
+**Core logic:**
+- Role assignment (shuffle + deal per player count chart)
+- Night-phase reveal logic (who knows whom, based on role)
+- Mission size table (4–10 players × 5 missions)
+- Magic Seal enforcement
+- Veteran token tracking (no player leads twice)
+- Amulet placement (6+ players: between missions 2/3, 3/4, 4/5)
+- Amulet loyalty check mechanic
+- Mission result scoring (track success/fail markers)
+- Q4 double-fail rule (7+ players)
+- Last Chance vote logic
+- Blind Hunter hunt logic
+- Win condition checking after each mission
+
+---
+
+#### [NEW] `quest_bg/roles.py`
+All role definitions with their constraints and special abilities.
+
+**Roles (standard + optional):**
+
+| Role | Side | Key Rule |
+|---|---|---|
+| Loyal Servant of Arthur | Good | Must play Success |
+| Duke | Good | Redirect one hand in Last Chance |
+| Archduke | Good | Swap one hand in Last Chance |
+| Apprentice | Good | Raises one hand; second after Evil lowers |
+| Cleric | Good | Knows if first Leader is Evil |
+| Youth | Good | Must Fail if Magic Seal placed on them |
+| Troublemaker | Good | Must lie Evil if loyalty-checked |
+| Minion of Mordred | Evil | Knows other named Evil |
+| Morgan le Fey | Evil | Bypasses Magic Seal; knows Scion |
+| Scion | Evil (4–5p) | Unknown to other Evil |
+| Changeling | Evil (6+p) | Unknown to everyone including Evil |
+| Blind Hunter | Evil | Can Hunt: name 2 Good by role |
+| Brute | Evil | Can only Fail in first 3 missions |
+| Lunatic | Evil | Must always Fail (unless Magic Seal) |
+| Mutineer | Evil | Can refuse to lower hand; can switch sides |
+| Trickster | Evil | Can lie when loyalty-checked |
+| Revealer | Evil | Must reveal after 3rd failed mission |
+| Arthur | Good | Knows Morgan le Fey; if named first in Hunt, Evil wins |
+
+---
+
+#### [NEW] `quest_bg/views.py`
+Discord UI button components for voting.
+
+- `QuestVoteView` — Success/Fail buttons (DM to each team member)
+- `LastChanceView` — Good-side accusation UI
+
+---
+
+#### [NEW] `quest_bg/embeds.py`
+Embed helpers for consistent rich formatting.
+
+---
+
+#### [NEW] `quest_bg/requirements.txt`
+```
+discord.py>=2.3.0
+python-dotenv>=1.0.0
+```
+
+---
+
+#### [NEW] `quest_bg/.env.example`
+```
+DISCORD_TOKEN=your_bot_token_here
+```
+
+---
+
+#### [NEW] `quest_bg/README.md`
+Setup guide and quick-start game walkthrough.
+
+---
+
+## Verification Plan
+
+### Manual Verification (Discord server)
+
+1. `pip install -r requirements.txt`, copy `.env.example` → `.env`, add token
+2. `python bot.py`
+3. `/quest new` → players `/quest join` → `/quest start`
+4. Verify each player gets a DM with their role
+5. Leader picks team with `/quest pick`, seals with `/quest seal`
+6. Team members vote via DM buttons
+7. Bot posts mission result in channel
+8. Verify amulet prompts at correct missions (6+ players)
+9. Verify Good wins after 3 successes
+10. Verify Final Mission triggers after 3 fails (2 in 4-player)
+11. Test Last Chance accusation and win/loss detection
+12. Test Blind Hunter hunt with correct/incorrect guesses
